@@ -72,7 +72,7 @@ UGIES/
 ├── training/
 │   ├── imagenet/                  # ImageNet training
 │   │   ├── train_graph_static_prob.py  # UGIES epoch-wise pruning (main)
-│   │   ├── train_online.py        # UGIES + PFB online acceleration
+│   │   ├── train_online.py        # UGIES online acceleration
 │   │   ├── train.py               # Baseline (no pruning)
 │   │   └── train_unsup.py         # InfoBatch baseline
 │   └── cifar/                     # CIFAR-100 training
@@ -201,7 +201,7 @@ torchrun --nproc_per_node=4 training/imagenet/train_graph_static_prob.py \
     --output-dir /path/to/output
 ```
 
-**UGIES + PFB online acceleration** (variant):
+**UGIES online acceleration** (variant):
 ```bash
 torchrun --nproc_per_node=4 training/imagenet/train_online.py \
     --model swin_t --data-path /path/to/imagenet \
@@ -228,11 +228,11 @@ torchrun --nproc_per_node=4 training/imagenet/train_online.py \
 | `--score-weight` | required | Coefficient a for intrinsic vs. extrinsic balance |
 | `--graph-dir` | required | Directory with pre-built graph files |
 
-### Online Pruning with PFB (`train_online.py`)
+### Online Pruning (`train_online.py`)
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `--use-online` | `False` | Enable online pruning with PFB |
+| `--use-online` | `False` | Enable online pruning |
 | `--ratio` | `0.5` | Pruning ratio |
 | `--kernel` | `64` | KDE kernel centers |
 | `--kernel-channel` | `128` | KDE kernel feature dim |
@@ -250,15 +250,6 @@ torchrun --nproc_per_node=4 training/imagenet/train_online.py \
 | DivBS | 78.5 | 78.2 | 77.2 |
 | **UGIES (Ours)** | **78.9** | **78.6** | **77.6** |
 
-### ImageNet-1k with ResNet-50 (Efficiency)
-
-| Method | Acc(%) | Total Time(h) | Reduction |
-|--------|--------|---------------|-----------|
-| Full Data | 76.4 | 13.9 | - |
-| InfoBatch | 76.6 | 10.2 | 26.6% |
-| PFB | 76.4 | 8.7 | 37.4% |
-| **UGIES (Ours)** | **76.5** | **7.9** | **43.2%** |
-
 ## Citation
 
 If you find this work useful, please cite:
@@ -274,4 +265,4 @@ If you find this work useful, please cite:
 
 ## Acknowledgements
 
-The CIFAR training code is built upon [InfoBatch](https://github.com/NUS-HPC-AI-LAB/InfoBatch) (ICLR 2024 Oral). The ImageNet training scripts are adapted from the [torchvision reference](https://github.com/pytorch/vision/tree/main/references/classification). The online pruning variant builds upon PFB (ICCV 2025).
+The CIFAR training code is built upon [InfoBatch(ICLR 2024)](https://github.com/NUS-HPC-AI-LAB/InfoBatch) . The ImageNet training scripts are adapted from the [torchvision reference](https://github.com/pytorch/vision/tree/main/references/classification). The online pruning variant builds upon [PFB(ICCV 2025)](https://github.com/dywu98/OnlineDataPrune.git) .
