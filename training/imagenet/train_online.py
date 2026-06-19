@@ -86,24 +86,24 @@ def train_one_epoch_online(model, criterion, optimizer, data_loader, device, epo
                     distance = torch.linalg.norm(delta, axis=1, ord=2) # shape (n_centers,n_data)
                     closest_indices = torch.argmin(distance, 0)[indices].squeeze_() # shape (n_data)
                     
-                    # 这一版更新是只把当前选中的样本更新到kernels里面去聚类，这样如果某些样本见的太多了
-                    # 就不会再见了 某些样本最近见的如果太少，就会重新再见一下
-                    # 首先构造两个weight矩阵
+                    # This update only adds currently selected samples to the kernel clustering state; samples observed too often
+                    # will be skipped, while recently under-observed samples can be revisited.
+                    # First construct the two weight tensors.
                     # alpha = 0.01
                     
                     # old_w = 1-alpha
                     n_old = kernels['numbers'].clone() # n_old
                     beta = alpha*kernels['numbers']
                     
-                    # 统计对应的更新进去以后 每个聚类中心该代表的样本个数 N
+                    # Update the number of samples represented by each cluster center after assignment.
                     kernels['numbers'][closest_indices] += 1
-                    # 统计有变化的聚类中心 用mask表示
+                    # Mark cluster centers that changed with a mask.
                     mask = kernels['numbers'] != n_old
-                    # 这些不等的地方是变化过的 才能算beta
+                    # Compute beta only for centers whose counts changed.
                     beta[mask] /= (kernels['numbers'][mask]-n_old[mask])
-                    # 有变化的地方才减去这个alpha
+                    # Apply the alpha update only to changed centers.
                     kernels['centers'] = (1-alpha*mask) * (n_old*kernels['centers'])
-                    # 有变化的地方的新进来的样本才加beta 没变化的应该保持为1
+                    # Apply beta only to newly assigned samples for changed centers; unchanged centers keep weight 1.
                     beta = beta*mask
                     new_w = (1+beta)
                     kernels['centers'].index_add_(0, closest_indices, new_w[closest_indices] * pooled_output[indices].squeeze())

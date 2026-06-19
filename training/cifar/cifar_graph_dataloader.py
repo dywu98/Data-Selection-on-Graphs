@@ -1,10 +1,10 @@
 """
-CIFAR100 专用的 GraphProbPrune Dataset
-基于索引匹配（而非文件名），适配 CIFAR100 预加载数据集
+GraphProbPrune dataset specialized for CIFAR100.
+Uses index-based matching rather than filenames for preloaded CIFAR100 datasets.
 
-核心差异：
-- ImageNet 使用 image_name（文件路径）匹配样本
-- CIFAR100 使用 idx（数据集索引）匹配样本
+Key differences:
+- ImageNet matches samples with image_name (file path)
+- CIFAR100 matches samples with idx (dataset index)
 """
 
 import os
@@ -27,22 +27,22 @@ import pickle
 
 def load_all_graph_files(graph_dir: str) -> List[dict]:
     """
-    读取指定目录下所有的 *.graph.pkl 文件
+    Load all *.graph.pkl files under the specified directory.
 
-    返回: 列表，每个元素包含 'file_path' 和 'graph_data'
+    Returns: list whose entries contain 'file_path' and 'graph_data'
     """
     graph_dir = Path(graph_dir)
     if not graph_dir.exists():
-        raise FileNotFoundError(f"图目录不存在: {graph_dir}")
+        raise FileNotFoundError(f"Graph directory does not exist: {graph_dir}")
 
     graph_files = sorted(graph_dir.rglob("*.graph.pkl"))
     if not graph_files:
-        raise FileNotFoundError(f"未在 {graph_dir} 找到任何 .graph.pkl 文件")
+        raise FileNotFoundError(f"No .graph.pkl files found in {graph_dir}")
 
-    print(f"🔍 找到 {len(graph_files)} 个图文件")
+    print(f"Found {len(graph_files)} graph files")
     graph_data_list = []
 
-    for file in tqdm(graph_files, desc="加载图文件"):
+    for file in tqdm(graph_files, desc="Loading graph files"):
         with open(file, 'rb') as f:
             graph_data = pickle.load(f)
             graph_data_list.append({
@@ -55,13 +55,13 @@ def load_all_graph_files(graph_dir: str) -> List[dict]:
 
 def compute_average_edge_weight_scores(nodes: List[dict], adj_matrix: np.ndarray) -> Dict[int, float]:
     """
-    计算图中每个节点的 score：该节点所有连接边的权重的平均值
+    Compute each node score as the average weight of its incident edges.
 
-    参数:
-        nodes: 节点列表，每个节点包含 'idx' (CIFAR100 数据集索引)
-        adj_matrix: 邻接矩阵 (N, N)
+    Args:
+        nodes: node list; each node contains 'idx' (CIFAR100 dataset index)
+        adj_matrix: adjacency matrix (N, N)
 
-    返回:
+    Returns:
         Dict[idx -> score]
     """
     N = len(nodes)
@@ -80,7 +80,7 @@ def compute_average_edge_weight_scores(nodes: List[dict], adj_matrix: np.ndarray
         else:
             avg_score = float(np.mean(weights))
 
-        # 使用 idx 作为 key（CIFAR100 数据集索引）
+        # Use idx as the key (CIFAR100 dataset index).
         idx = nodes[i]['idx']
         avg_scores[idx] = avg_score
 
@@ -89,14 +89,14 @@ def compute_average_edge_weight_scores(nodes: List[dict], adj_matrix: np.ndarray
 
 def collect_all_scores(graph_data_list: List[dict]) -> Dict[int, float]:
     """
-    遍历所有图文件，提取每个样本的平均边权 score
+    Iterate over all graph files and extract the average edge-weight score for each sample.
 
-    返回:
+    Returns:
         Dict[idx -> score]
     """
     all_scores = {}
 
-    for item in tqdm(graph_data_list, desc="计算每个图的平均边权分数"):
+    for item in tqdm(graph_data_list, desc="Computing average edge-weight scores for each graph"):
         graph_data = item['graph_data']
         nodes = graph_data['nodes']
         adj_matrix = graph_data['adj_matrix']
@@ -105,10 +105,10 @@ def collect_all_scores(graph_data_list: List[dict]) -> Dict[int, float]:
 
         for idx, score in scores_dict.items():
             if idx in all_scores:
-                print(f"⚠️ 重复 idx: {idx}，将覆盖前值")
+                print(f"Warning: Duplicate idx: {idx}, overwriting the previous value")
             all_scores[idx] = score
 
-    print(f"✅ 共计算出 {len(all_scores)} 个样本的分数")
+    print(f"Computed scores for {len(all_scores)} samples")
     return all_scores
 
 
@@ -118,14 +118,14 @@ def create_score_array_by_index(
     fill_value: float = 0.0
 ) -> np.ndarray:
     """
-    根据 idx->score 映射创建分数数组
+    Create a score array from the idx-to-score mapping.
 
-    参数:
+    Args:
         scores: Dict[idx -> score]
-        dataset_length: 数据集总长度
-        fill_value: 未匹配样本的填充值
+        dataset_length: dataset length
+        fill_value: fill value for unmatched samples
 
-    返回:
+    Returns:
         scores: np.ndarray, shape=(dataset_length,)
     """
     score_array = np.full(dataset_length, fill_value, dtype=np.float32)
@@ -134,23 +134,23 @@ def create_score_array_by_index(
         if 0 <= idx < dataset_length:
             score_array[idx] = float(score)
         else:
-            print(f"⚠️ 警告：idx {idx} 超出数据集范围 [0, {dataset_length-1}]，跳过")
+            print(f"Warning: Warning: idx {idx} is outside the dataset range [0, {dataset_length-1}], skipping")
 
     valid_count = np.sum(score_array != fill_value)
-    print(f"✅ 成功创建 score 数组，形状: {score_array.shape}")
-    print(f"   - 匹配到的有效样本数: {valid_count}")
-    print(f"   - 未匹配样本数: {dataset_length - valid_count} (填充为 {fill_value})")
+    print(f"Created score array with shape: {score_array.shape}")
+    print(f"   - matched valid samples: {valid_count}")
+    print(f"   - unmatched samples: {dataset_length - valid_count} (filled with {fill_value})")
 
     return score_array
 
 
 class CIFARGraphProbPrune(Dataset):
     """
-    CIFAR100 专用的 GraphProbPrune Dataset
+    GraphProbPrune dataset specialized for CIFAR100.
 
-    与 ImageNet 版本的主要区别：
-    1. 使用 idx（数据集索引）进行匹配，而非 image_name（文件路径）
-    2. 直接包装 torchvision.datasets.CIFAR100，无需 is_valid_file 等
+    Main differences from the ImageNet version:
+    1. Use idx (dataset index) for matching instead of image_name (file path)
+    2. Wrap torchvision.datasets.CIFAR100 directly; no is_valid_file hook is required
     """
 
     def __init__(
@@ -163,13 +163,13 @@ class CIFARGraphProbPrune(Dataset):
         mode: str = "prob"
     ):
         """
-        参数:
-            dataset: torchvision.datasets.CIFAR100 实例
-            input_graph_dir: 图文件根目录（包含 class_*/cluster_*.graph.pkl）
-            ratio: 剪枝比例
-            num_epoch: 总训练 epoch 数
-            delta: annealing 参数
-            mode: 选择模式，'prob' 或 'topk'
+        Args:
+            dataset: torchvision.datasets.CIFAR100 instance
+            input_graph_dir: graph root directory containing class_*/cluster_*.graph.pkl
+            ratio: pruning ratio
+            num_epoch: total number of training epochs
+            delta: annealing parameter
+            mode: selection mode: 'prob' or 'topk'
         """
         self.dataset = dataset
         self.ratio = ratio
@@ -177,13 +177,13 @@ class CIFARGraphProbPrune(Dataset):
         self.delta = delta
         self.mode = mode
 
-        # 初始化分数数组
+        # Initialize score arrays.
         self.node_scores = np.ones([len(self.dataset)])
         self.final_scores = np.ones([len(self.dataset)])
         self.weights = np.ones(len(self.dataset))
         self.save_num = 0
 
-        # 加载图数据并计算 edge scores
+        # Load graph data and compute edge scores.
         graph_data_list = load_all_graph_files(input_graph_dir)
         scores = collect_all_scores(graph_data_list)
         self.edge_scores = create_score_array_by_index(
@@ -193,12 +193,12 @@ class CIFARGraphProbPrune(Dataset):
         )
 
         print(f"prune selection mode: {self.mode}")
-        print(f"成功计算 edge scores，数据集长度: {len(self.dataset)}")
+        print(f"Successfully computed edge scores, dataset length: {len(self.dataset)}")
 
     def __setscore__(self, indices, values):
-        """更新节点的动态分数（训练过程中调用）"""
+        """Update dynamic node scores during training."""
         self.node_scores[indices] = values
-        # final_scores = node_scores - edge_scores (edge scores 高表示与邻居相似，更容易被剪枝)
+        # final_scores = node_scores - edge_scores (higher edge scores indicate greater similarity to neighbors and a higher pruning tendency)
         self.final_scores[indices] = self.node_scores[indices] - self.edge_scores[indices]
 
     def __len__(self):
@@ -211,9 +211,9 @@ class CIFARGraphProbPrune(Dataset):
 
     def prune(self):
         """
-        执行剪枝，返回当前 epoch 要使用的样本索引列表
+        Run pruning and return the sample indices used in the current epoch.
         """
-        # 选择 final_scores 低于 99 分位数的样本作为 well_learned
+        # Select samples below the 99th percentile of final_scores as well learned.
         b = self.final_scores < np.percentile(self.final_scores, 99)
         well_learned_samples = np.where(b)[0]
         pruned_samples = np.where(np.invert(b))[0]
@@ -224,7 +224,7 @@ class CIFARGraphProbPrune(Dataset):
             np.random.shuffle(pruned_samples)
             return pruned_samples
 
-        # 根据模式选择样本
+        # Select samples according to the configured mode.
         prob = torch.softmax(torch.from_numpy(self.final_scores[well_learned_samples]) / 5.0, dim=0).numpy()
         k = int(self.ratio * len(well_learned_samples))
 
@@ -270,12 +270,12 @@ class CIFARGraphProbPrune(Dataset):
         self.weights = np.ones(len(self.dataset))
 
     def total_time_cost(self):
-        """兼容 ImageNet 版本接口"""
+        """Maintain compatibility with the ImageNet interface."""
         return 0
 
 
 class InfoBatchSampler:
-    """InfoBatch 采样器"""
+    """InfoBatch sampler."""
 
     def __init__(self, infobatch_dataset, num_epoch=float('inf'), delta=1):
         self.infobatch_dataset = infobatch_dataset
@@ -311,8 +311,8 @@ class InfoBatchSampler:
         return self
 
     def set_epoch(self, epoch):
-        """兼容 DistributedSampler 接口"""
-        # 设置随机种子以确保每个 epoch 不同的 shuffle
+        """Maintain compatibility with the DistributedSampler interface."""
+        # Set the random seed to obtain a different shuffle for each epoch.
         np.random.seed(epoch)
 
 
@@ -388,7 +388,7 @@ def is_master():
 
 
 def split_index(t):
-    """将大索引拆分为低 15 位和高位（用于分布式训练的索引传递）"""
+    """Split large indices into low 15 bits and high bits for distributed index transfer."""
     low_mask = 0b111111111111111
     low = torch.tensor([x & low_mask for x in t])
     high = torch.tensor([(x >> 15) & low_mask for x in t])
@@ -396,6 +396,6 @@ def split_index(t):
 
 
 def recombine_index(low, high):
-    """重组拆分的索引"""
+    """Recombine split indices."""
     original_tensor = torch.tensor([(high[i] << 15) + low[i] for i in range(len(low))])
     return original_tensor

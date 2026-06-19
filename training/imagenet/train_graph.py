@@ -137,12 +137,12 @@ def load_data(traindir, valdir, args):
         ra_magnitude = getattr(args, "ra_magnitude", None)
         augmix_severity = getattr(args, "augmix_severity", None)
         
-        # === 开始修改：支持剪枝列表 ===
+        # Prune-list support.
         def is_valid_file(path):
-            # 默认都有效
+            # All files are valid by default.
             if not hasattr(args, 'prune_list') or args.prune_list is None:
                 return True
-            # 检查是否在剪枝名单中（匹配文件名即可）
+            # Check whether the file is in the prune list.
             # print(f"{path}")
             # basename = os.path.basename(path)
             is_a_not_valid_flag = (path in prune_set)
@@ -153,17 +153,17 @@ def load_data(traindir, valdir, args):
                 return True
             # return not is_a_not_valid_flag
 
-        # 如果提供了 prune_list，则加载并构建排除集合
+        # Load the exclusion set when prune_list is provided.
         prune_set = set()
         if hasattr(args, 'prune_list') and args.prune_list:
             if os.path.exists(args.prune_list):
                 with open(args.prune_list, 'r') as f:
                     prune_set = {line.strip() for line in f if line.strip()}
-                print(f"📌 已加载剪枝名单：共 {len(prune_set)} 个样本将被排除")
+                print(f"Loaded prune list: {len(prune_set)} samples will be excluded")
             else:
-                raise FileNotFoundError(f"未找到剪枝名单文件: {args.prune_list}")
+                raise FileNotFoundError(f"Prune-list file not found: {args.prune_list}")
 
-        # 创建带过滤的 Dataset
+        # Create a filtered dataset.
         dataset = torchvision.datasets.ImageFolder(
             traindir,
             transform=presets.ClassificationPresetTrain(
@@ -179,7 +179,7 @@ def load_data(traindir, valdir, args):
             is_valid_file=is_valid_file,
         )
 
-        print(f"✅ 训练集原始大小: {len(dataset.imgs)}")
+        print(f"Training set size: {len(dataset.imgs)}")
 
         if args.cache_dataset:
             print(f"Saving dataset_train to {cache_path}")

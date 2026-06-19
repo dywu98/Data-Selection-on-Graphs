@@ -1,14 +1,14 @@
 """
-CIFAR100 全量图 GraphProbPrune Dataset
-支持加载单个全量图文件（不按类别聚类）
+CIFAR100 full-graph GraphProbPrune dataset.
+Supports loading a single full-graph file without class-wise clustering.
 
-优化版本：
-- 直接使用预计算的 edge_scores，不需要加载邻接矩阵
-- 加载速度大幅提升
+Optimized version:
+- Uses precomputed edge_scores directly without loading the adjacency matrix.
+- Substantially improves loading speed.
 
-与 cifar_graph_dataloader.py 的区别：
-- 加载单个 graph.pkl 文件而非目录下的多个 class_*/cluster_*.graph.pkl
-- 直接通过 idx 匹配样本
+Differences from cifar_graph_dataloader.py:
+- Loads a single graph.pkl file rather than multiple class_*/cluster_*.graph.pkl files from a directory.
+- Matches samples directly by idx.
 """
 
 import os
@@ -31,21 +31,21 @@ import pickle
 
 def load_full_graph(graph_path: str, verbose: bool = True) -> dict:
     """
-    加载单个全量图文件
+    Load a single full-graph file.
 
-    参数:
-        graph_path: graph.pkl 文件路径
-        verbose: 是否打印加载时间
+    Args:
+        graph_path: path to the graph.pkl file
+        verbose: whether to print loading time
 
-    返回:
-        graph_data: 图数据字典
+    Returns:
+        graph_data: graph-data dictionary
     """
     graph_path = Path(graph_path)
     if not graph_path.exists():
-        raise FileNotFoundError(f"图文件不存在: {graph_path}")
+        raise FileNotFoundError(f"Graph file does not exist: {graph_path}")
 
     if verbose:
-        print(f"加载图文件: {graph_path}")
+        print(f"Loading graph files: {graph_path}")
         t0 = time.perf_counter()
 
     with open(graph_path, 'rb') as f:
@@ -53,8 +53,8 @@ def load_full_graph(graph_path: str, verbose: bool = True) -> dict:
 
     if verbose:
         t1 = time.perf_counter()
-        print(f"[Time] 加载图文件耗时: {t1 - t0:.2f} 秒")
-        print(f"图包含 {graph_data['num_nodes']} 个节点")
+        print(f"[Time] Loading graph file time: {t1 - t0:.2f} s")
+        print(f"Graph contains {graph_data['num_nodes']} nodes")
 
     return graph_data
 
@@ -66,15 +66,15 @@ def create_score_array_from_full_graph(
     verbose: bool = True
 ) -> np.ndarray:
     """
-    从图数据创建分数数组
+    Create a score array from graph data.
 
-    参数:
-        graph_data: 图数据字典，应包含 'edge_scores' 或 'nodes' + 'adj_matrix'
-        dataset_length: 数据集总长度
-        fill_value: 未匹配样本的填充值
-        verbose: 是否打印信息
+    Args:
+        graph_data: graph-data dictionary; should contain 'edge_scores' or 'nodes' plus 'adj_matrix'
+        dataset_length: dataset length
+        fill_value: fill value for unmatched samples
+        verbose: whether to print information
 
-    返回:
+    Returns:
         score_array: np.ndarray, shape=(dataset_length,)
     """
     if verbose:
@@ -82,7 +82,7 @@ def create_score_array_from_full_graph(
 
     score_array = np.full(dataset_length, fill_value, dtype=np.float32)
 
-    # 优先使用预计算的 edge_scores
+    # Prefer precomputed edge_scores.
     if 'edge_scores' in graph_data:
         scores = graph_data['edge_scores']
         matched = 0
@@ -93,15 +93,15 @@ def create_score_array_from_full_graph(
 
         if verbose:
             t1 = time.perf_counter()
-            print(f"[Time] 从预计算的 edge_scores 创建数组耗时: {t1 - t0:.2f} 秒")
-            print(f"✅ 成功创建 score 数组，形状: {score_array.shape}")
-            print(f"   - 匹配到的有效样本数: {matched}")
-            print(f"   - 未匹配样本数: {dataset_length - matched} (填充为 {fill_value})")
+            print(f"[Time] Time to create array from precomputed edge_scores: {t1 - t0:.2f} s")
+            print(f"Created score array with shape: {score_array.shape}")
+            print(f"   - matched valid samples: {matched}")
+            print(f"   - unmatched samples: {dataset_length - matched} (filled with {fill_value})")
 
     elif 'adj_matrix' in graph_data:
-        # 兼容旧版本：从邻接矩阵计算
+        # Backward compatibility: compute from the adjacency matrix.
         if verbose:
-            print("图中没有预计算的 edge_scores，从邻接矩阵计算...")
+            print("No precomputed edge_scores in the graph; computing from the adjacency matrix...")
 
         nodes = graph_data['nodes']
         adj_matrix = graph_data['adj_matrix']
@@ -126,21 +126,21 @@ def create_score_array_from_full_graph(
 
         if verbose:
             t1 = time.perf_counter()
-            print(f"[Time] 从邻接矩阵计算 scores 耗时: {t1 - t0:.2f} 秒")
+            print(f"[Time] Time to compute scores from the adjacency matrix: {t1 - t0:.2f} s")
 
     else:
-        raise ValueError("图数据既没有 'edge_scores' 也没有 'adj_matrix'，无法创建分数数组")
+        raise ValueError("Graph data contains neither 'edge_scores' nor 'adj_matrix'; cannot create the score array.")
 
     return score_array
 
 
 class CIFARFullGraphProbPrune(Dataset):
     """
-    CIFAR100 全量图 GraphProbPrune Dataset
+    CIFAR100 full-graph GraphProbPrune dataset.
 
-    与 CIFARGraphProbPrune 的区别：
-    - 加载单个全量图文件而非目录下的多个聚类图
-    - 适用于不按类别聚类的对比实验
+    Differences from CIFARGraphProbPrune:
+    - Load a single full-graph file instead of multiple clustered graph files from a directory.
+    - Intended for ablation experiments without class-wise clustering.
     """
 
     def __init__(
@@ -154,14 +154,14 @@ class CIFARFullGraphProbPrune(Dataset):
         verbose: bool = True
     ):
         """
-        参数:
-            dataset: torchvision.datasets.CIFAR100 实例
-            graph_path: 全量图文件路径 (单个 .pkl 文件)
-            ratio: 剪枝比例
-            num_epoch: 总训练 epoch 数
-            delta: annealing 参数
-            mode: 选择模式，'prob' 或 'topk'
-            verbose: 是否打印加载信息
+        Args:
+            dataset: torchvision.datasets.CIFAR100 instance
+            graph_path: full-graph file path (single .pkl file)
+            ratio: pruning ratio
+            num_epoch: total number of training epochs
+            delta: annealing parameter
+            mode: selection mode: 'prob' or 'topk'
+            verbose: whether to print loading information
         """
         self.dataset = dataset
         self.ratio = ratio
@@ -170,19 +170,19 @@ class CIFARFullGraphProbPrune(Dataset):
         self.mode = mode
         self.verbose = verbose
 
-        # 初始化分数数组
+        # Initialize score arrays.
         self.node_scores = np.ones([len(self.dataset)])
         self.final_scores = np.ones([len(self.dataset)])
         self.weights = np.ones(len(self.dataset))
         self.save_num = 0
 
-        # 计时：加载图
+        # Time graph loading.
         t_load_start = time.perf_counter()
 
-        # 加载全量图
+        # Load the full graph.
         graph_data = load_full_graph(graph_path, verbose=verbose)
 
-        # 创建分数数组
+        # Create the score array.
         self.edge_scores = create_score_array_from_full_graph(
             graph_data=graph_data,
             dataset_length=len(self.dataset),
@@ -195,11 +195,11 @@ class CIFARFullGraphProbPrune(Dataset):
 
         if verbose:
             print(f"prune selection mode: {self.mode}")
-            print(f"数据集长度: {len(self.dataset)}")
-            print(f"[Time] 图加载总耗时: {self.load_time:.2f} 秒")
+            print(f"dataset length: {len(self.dataset)}")
+            print(f"[Time] total graph loading time: {self.load_time:.2f} s")
 
     def __setscore__(self, indices, values):
-        """更新节点的动态分数（训练过程中调用）"""
+        """Update dynamic node scores during training."""
         self.node_scores[indices] = values
         self.final_scores[indices] = self.node_scores[indices] - self.edge_scores[indices]
 
@@ -213,11 +213,11 @@ class CIFARFullGraphProbPrune(Dataset):
 
     def prune(self):
         """
-        执行剪枝，返回当前 epoch 要使用的样本索引列表
+        Run pruning and return the sample indices used in the current epoch.
         """
         t0 = time.perf_counter()
 
-        # 选择 final_scores 低于 99 分位数的样本作为 well_learned
+        # Select samples below the 99th percentile of final_scores as well learned.
         b = self.final_scores < np.percentile(self.final_scores, 99)
         well_learned_samples = np.where(b)[0]
         pruned_samples = np.where(np.invert(b))[0]
@@ -229,7 +229,7 @@ class CIFARFullGraphProbPrune(Dataset):
             self.prune_time = time.perf_counter() - t0
             return pruned_samples
 
-        # 根据模式选择样本
+        # Select samples according to the configured mode.
         prob = torch.softmax(torch.from_numpy(self.final_scores[well_learned_samples]) / 5.0, dim=0).numpy()
         k = int(self.ratio * len(well_learned_samples))
 
@@ -277,20 +277,20 @@ class CIFARFullGraphProbPrune(Dataset):
         self.weights = np.ones(len(self.dataset))
 
     def total_time_cost(self):
-        """兼容 ImageNet 版本接口"""
+        """Maintain compatibility with the ImageNet interface."""
         return 0
 
     def get_load_time(self):
-        """返回图加载时间"""
+        """Return graph loading time."""
         return self.load_time
 
     def get_last_prune_time(self):
-        """返回最近一次剪枝操作的时间"""
+        """Return the most recent pruning operation time."""
         return getattr(self, 'prune_time', 0.0)
 
 
 class InfoBatchSampler:
-    """InfoBatch 采样器"""
+    """InfoBatch sampler."""
 
     def __init__(self, infobatch_dataset, num_epoch=float('inf'), delta=1):
         self.infobatch_dataset = infobatch_dataset
@@ -326,7 +326,7 @@ class InfoBatchSampler:
         return self
 
     def set_epoch(self, epoch):
-        """兼容 DistributedSampler 接口"""
+        """Maintain compatibility with the DistributedSampler interface."""
         np.random.seed(epoch)
 
 
@@ -402,7 +402,7 @@ def is_master():
 
 
 def split_index(t):
-    """将大索引拆分为低 15 位和高位（用于分布式训练的索引传递）"""
+    """Split large indices into low 15 bits and high bits for distributed index transfer."""
     low_mask = 0b111111111111111
     low = torch.tensor([x & low_mask for x in t])
     high = torch.tensor([(x >> 15) & low_mask for x in t])
@@ -410,6 +410,6 @@ def split_index(t):
 
 
 def recombine_index(low, high):
-    """重组拆分的索引"""
+    """Recombine split indices."""
     original_tensor = torch.tensor([(high[i] << 15) + low[i] for i in range(len(low))])
     return original_tensor

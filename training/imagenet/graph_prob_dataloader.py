@@ -28,22 +28,22 @@ from typing import List, Dict, Any, Optional, Tuple
 
 def load_all_graph_files(graph_dir: str) -> List[Dict[str, Any]]:
     """
-    读取指定目录下所有的 *.graph.pkl 文件，并加载为图数据列表。
+    Load all *.graph.pkl files under the specified directory into a graph-data list.
 
-    返回: 列表，每个元素是 (file_path, graph_data) 的元组
+    Returns: list whose entries contain file_path and graph_data
     """
     graph_dir = Path(graph_dir)
     if not graph_dir.exists():
-        raise FileNotFoundError(f"图目录不存在: {graph_dir}")
+        raise FileNotFoundError(f"Graph directory does not exist: {graph_dir}")
 
     graph_files = sorted(graph_dir.rglob("*.graph.pkl"))
     if not graph_files:
-        raise FileNotFoundError(f"未在 {graph_dir} 找到任何 .graph.pkl 文件")
+        raise FileNotFoundError(f"No .graph.pkl files found in {graph_dir}")
 
-    print(f"🔍 找到 {len(graph_files)} 个图文件")
+    print(f"Found {len(graph_files)} graph files")
     graph_data_list = []
 
-    for file in tqdm(graph_files, desc="加载图文件"):
+    for file in tqdm(graph_files, desc="Loading graph files"):
         with open(file, 'rb') as f:
             graph_data = pickle.load(f)
             graph_data_list.append({
@@ -56,13 +56,13 @@ def load_all_graph_files(graph_dir: str) -> List[Dict[str, Any]]:
 
 def compute_average_edge_weight_scores(nodes: List[Dict], adj_matrix: np.ndarray) -> Dict[str, float]:
     """
-    计算图中每个节点的 score：该节点所有连接边的权重的平均值（即平均邻接边权）
+    Compute each node score as the average weight of its incident edges.
 
-    参数:
-        nodes: 节点列表，每个节点包含 'image_name'
-        adj_matrix: 邻接矩阵 (N, N)
+    Args:
+        nodes: node list; each node contains 'image_name'
+        adj_matrix: adjacency matrix (N, N)
 
-    返回:
+    Returns:
         Dict[image_name] -> score (float)
     """
     N = len(nodes)
@@ -71,14 +71,14 @@ def compute_average_edge_weight_scores(nodes: List[Dict], adj_matrix: np.ndarray
     W = adj_matrix if not hasattr(adj_matrix, 'toarray') else adj_matrix.toarray()
 
     for i in range(N):
-        # 获取该节点的所有边权重（非零）
+        # Collect all nonzero incident edge weights for this node.
         weights = []
         for j in range(N):
             if i != j and W[i, j] > 0:
                 weights.append(W[i, j])
 
         if len(weights) == 0:
-            avg_score = 0.0  # 孤立点
+            avg_score = 0.0  # isolated node
         else:
             avg_score = float(np.mean(weights))
 
@@ -90,38 +90,38 @@ def compute_average_edge_weight_scores(nodes: List[Dict], adj_matrix: np.ndarray
 
 def collect_all_scores(graph_data_list: List[Dict]) -> Dict[str, float]:
     """
-    遍历所有图文件，提取每个样本的平均边权 score
+    Iterate over all graph files and extract the average edge-weight score for each sample.
 
-    返回:
+    Returns:
         Dict[image_name: str -> score: float]
     """
     all_scores = {}
 
-    for item in tqdm(graph_data_list, desc="计算每个图的平均边权分数"):
+    for item in tqdm(graph_data_list, desc="Computing average edge-weight scores for each graph"):
         graph_data = item['graph_data']
         nodes = graph_data['nodes']
         adj_matrix = graph_data['adj_matrix']
 
         scores_dict = compute_average_edge_weight_scores(nodes, adj_matrix)
 
-        # 合并到全局字典（理论上 image_name 不应重复）
+        # Merge into the global dictionary; image_name should be unique in principle.
         for img_name, score in scores_dict.items():
             if img_name in all_scores:
-                print(f"⚠️ 重复 image_name: {img_name}，将覆盖前值")
+                print(f"Warning: Duplicate image_name: {img_name}, overwriting the previous value")
             all_scores[img_name] = score
 
-    print(f"✅ 共计算出 {len(all_scores)} 个样本的分数")
+    print(f"Computed scores for {len(all_scores)} samples")
     return all_scores
 
 
 def create_image_to_index_mapping(dataset: Dataset) -> Dict[str, int]:
     """
-    从 ImageFolder 类型 dataset 构建 image_path (或 basename) 到 index 的映射
+    Build a mapping from image_path (or basename) to index for an ImageFolder dataset.
 
-    注意: ImageFolder.dataset.imgs 是 (image_path, class_idx) 的列表
-    我们取 image_path 的 basename 作为 key
+    Note: ImageFolder.dataset.imgs is a list of (image_path, class_idx).
+    Use the basename of image_path as the key.
 
-    返回:
+    Returns:
         Dict[basename -> index]
     """
     mapping = {}
@@ -129,7 +129,7 @@ def create_image_to_index_mapping(dataset: Dataset) -> Dict[str, int]:
         img_name = Path(img_path).name
         mapping[img_name] = idx
 
-    print(f"📌 dataset 包含 {len(mapping)} 个样本")
+    print(f"dataset contains {len(mapping)} samples")
     return mapping
 
 
@@ -138,10 +138,10 @@ def match_scores_to_dataset(
     dataset: Dataset
 ) -> List[Tuple[int, float]]:
     """
-    将 graph 中计算出的 score 通过 image_name 匹配到 dataset 的索引上
+    Match graph-derived scores to dataset indices via image_name.
 
-    返回:
-        List[(dataset_index, score)]，可用于后续排序、采样等
+    Returns:
+        List[(dataset_index, score)], usable for downstream sorting or sampling
     """
     img_to_idx = create_image_to_index_mapping(dataset)
     matched = []
@@ -150,7 +150,7 @@ def match_scores_to_dataset(
     not_found = []
 
     for img_name, score in scores.items():
-        base_name = Path(img_name).name  # 确保只取文件名
+        base_name = Path(img_name).name  # keep only the filename
         if base_name in img_to_idx:
             dataset_idx = img_to_idx[base_name]
             matched.append((dataset_idx, score))
@@ -159,9 +159,9 @@ def match_scores_to_dataset(
             not_found.append(img_name)
 
     if not_found:
-        print(f"🔍 警告：共 {len(not_found)} 个样本未在 dataset 中找到: {not_found[:5]}...")
+        print(f"Warning: {len(not_found)} samples were not found in the dataset: {not_found[:5]}...")
 
-    print(f"✅ 成功匹配 {len(matched)} 个样本到 dataset")
+    print(f"Matched {len(matched)} samples to the dataset")
     return matched
 
 def create_score_array_by_dataset_index(
@@ -170,34 +170,34 @@ def create_score_array_by_dataset_index(
     fill_value: float = np.nan
 ) -> np.ndarray:
     """
-    根据 matched_results 创建一个与 dataset 索引对齐的 score 数组
+    Create a score array aligned with dataset indices from matched_results.
 
-    参数:
-        matched_results: List[(dataset_idx, score)]，已匹配好的结果
-        dataset: Dataset，如 ImageFolder，用于确定总长度
-        fill_value: 对于未匹配到的样本，填充值（推荐 np.nan 或 0.0）
+    Args:
+        matched_results: List[(dataset_idx, score)], matched results
+        dataset: Dataset, such as ImageFolder, used to determine the total length
+        fill_value: fill value for unmatched samples; np.nan or 0.0 is recommended
 
-    返回:
-        scores: np.ndarray, shape=(len(dataset),), scores[i] 是 dataset[i] 的 score
+    Returns:
+        scores: np.ndarray, shape=(len(dataset),), scores[i] is the score for dataset[i]
     """
     n = len(dataset)
     scores = np.full(n, fill_value, dtype=np.float32)
 
     for idx, score in matched_results:
         if idx < 0 or idx >= n:
-            print(f"⚠️ 警告：index {idx} 超出 dataset 范围 [0, {n-1}]，跳过")
+            print(f"Warning: Warning: index {idx} is outside the dataset range [0, {n-1}], skipping")
             continue
         scores[idx] = float(score)
 
-    # 统计有效值数量
+    # Count valid entries.
     if np.isnan(fill_value):
         valid_count = np.sum(~np.isnan(scores))
     else:
         valid_count = np.sum(scores != fill_value)
 
-    print(f"✅ 成功创建 score 数组，形状: {scores.shape}")
-    print(f"   - 匹配到的有效样本数: {valid_count}")
-    print(f"   - 未匹配样本数: {n - valid_count} (填充为 {fill_value})")
+    print(f"Created score array with shape: {scores.shape}")
+    print(f"   - matched valid samples: {valid_count}")
+    print(f"   - unmatched samples: {n - valid_count} (filled with {fill_value})")
 
     return scores
 
@@ -213,20 +213,20 @@ class GraphProbPrune(Dataset):
         self.weights = np.ones(len(self.dataset))
         self.save_num = 0
 
-        # Step 1: 加载所有图
+        # Step 1: load all graphs
         graph_data_list = load_all_graph_files(input_graph_dir)
 
-        # Step 2: 计算每个样本的平均边权 score
+        # Step 2: compute the average edge-weight score for each sample
         scores = collect_all_scores(graph_data_list)  # image_name -> score
 
-        # Step 3: 匹配到 dataset
+        # Step 3: match scores to the dataset
         matched_results = match_scores_to_dataset(scores, dataset)
         self.edge_scores = create_score_array_by_dataset_index(
                           matched_results=matched_results,
                           dataset=dataset,
-                          fill_value=0.0  # 或 fill_value=0.0
+                          fill_value=0.0  # or fill_value=0.0
                       )
-        print(f"成功计算 edge scores")
+        print(f"Successfully computed edge scores")
 
 
     def __setscore__(self, indices, values):

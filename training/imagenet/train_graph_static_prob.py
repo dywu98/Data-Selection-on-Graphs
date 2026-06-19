@@ -23,44 +23,44 @@ import torch.nn.functional as F
 
 def compute_uncertainty_metrics(logits, top_k=2, reduction='mean'):
     """
-    根据 logits 计算多种无监督不确定性指标。
+    Compute unsupervised uncertainty metrics from logits.
     
-    参数:
-        logits (torch.Tensor): 形状为 [T, V] 或 [1, T, V] 的 logits 输出
-        top_k (int): 用于计算 top-k gap 的 k 值，默认为 2
-        reduction (str): 如何聚合 token 级结果，可选 'mean', 'max', 'none'
+    Args:
+        logits (torch.Tensor): logit output with shape [T, V] or [1, T, V]
+        top_k (int): k used for top-k gap computation; defaults to 2
+        reduction (str): aggregation for token-level results; one of 'mean', 'max', or 'none'
     
-    返回:
-        dict: 包含以下字段的字典
-            - entropy: 熵（越大约不确定）
-            - max_prob: 最大预测概率（越小越不确定）
-            - topk_gap: 前k名中最大与次大之间的差值（越小越不确定）
-            - raw: 每个 token 的原始值列表（当 reduction='none' 时有用）
+    Returns:
+        dict: dictionary containing the following fields
+            - entropy: entropy; larger values indicate higher uncertainty
+            - max_prob: maximum predicted probability; smaller values indicate higher uncertainty
+            - topk_gap: gap between the largest and second-largest top-k probabilities; smaller values indicate higher uncertainty
+            - raw: raw per-token values; useful when reduction='none'
     """
-    # 处理输入维度
+    # Handle input dimensions.
     if logits.dim() == 3:
         logits = logits.squeeze(0)  # [T, V]
     T, V = logits.shape
     
-    # 转换为概率
+    # Convert logits to probabilities.
     probs = F.softmax(logits, dim=-1)  # [T, V]
 
-    # 1. 计算熵: H(p) = -sum(p * log(p))
+    # 1. Compute entropy: H(p) = -sum(p * log(p))
     log_probs = F.log_softmax(logits, dim=-1)
     # entropies = -(probs * log_probs).sum(dim=-1).detach().cpu().float().numpy()  # [T]
     entropies = -(probs * log_probs).sum(dim=-1)  # [T]
 
-    # # 2. 最大概率
+    # # 2. Maximum probability
     # max_probs = probs.max(dim=-1).values.detach().cpu().float().numpy()  # [T]
 
-    # # 3. Top-k Gap: 第一大和第二大的差值
+    # # 3. Top-k Gap: gap between the largest and second-largest probabilities
     # topk_vals = torch.topk(probs, k=top_k, dim=-1).values  # [T, k]
     # if top_k >= 2:
     #     gaps = (topk_vals[:, 0] - topk_vals[:, 1]).detach().cpu().float().numpy()  # [T]
     # else:
-    #     gaps = np.zeros(T)  # 如果 k=1，gap 无意义
+    #     gaps = np.zeros(T)  # gap is undefined when k=1
 
-    # 聚合
+    # Aggregate results.
     def reduce(x):
         if reduction == 'mean':
             return x.mean()

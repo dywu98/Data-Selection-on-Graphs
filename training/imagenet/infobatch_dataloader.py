@@ -42,10 +42,10 @@ class InfoBatch(Dataset):
         # well learned samples' learning rate to keep estimation about the same
         # for the next version, also consider new class balance
         start_time = time.time()
-        thresh = np.percentile(self.scores, 99) # 从低到高的
+        thresh = np.percentile(self.scores, 99) # ascending percentile threshold
         b = self.scores<thresh
         well_learned_samples = np.where(b)[0]
-        pruned_samples=np.where(np.invert(b))[0] # 这里是留下来的 invert是把mask取反
+        pruned_samples=np.where(np.invert(b))[0] # these samples are retained; invert flips the mask
         selected = np.random.choice(well_learned_samples, int(self.ratio*len(well_learned_samples)))
         self.reset_weights()
         if len(selected)>0:

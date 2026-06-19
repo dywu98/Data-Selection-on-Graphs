@@ -13,7 +13,7 @@ from typing import List, Optional
 from multiprocessing import Pool, current_process
 
 # ========================================
-# 工具函数：读取目录下所有 .pkl 文件
+# Utility functions for reading all .pkl files in a directory.
 # ========================================
 
 def process_one_class(
@@ -29,8 +29,8 @@ def process_one_class(
     input_pkl_dir: str,
 ):
     """
-    子进程执行：对单个类聚类并保存结果
-    注意：df_class 会被 pickle 传入；建议只传必要列且不太大。
+    Worker process: cluster one class and save the results.
+    Note: df_class is passed through pickle; pass only necessary columns and keep it reasonably small.
     """
     try:
         N = len(df_class)
@@ -75,23 +75,23 @@ def process_one_class(
 
 def read_all_pkl_files(folder_path: str, columns: List[str] = None, verbose: bool = True) -> pd.DataFrame:
     """
-    读取文件夹中所有 .pkl 文件，合并为一个 DataFrame
+    Read all .pkl files in a directory and merge them into one DataFrame.
 
-    参数:
-        folder_path: 包含 .pkl 的目录
-        columns: 可选，只保留某些列（减少内存）
-        verbose: 是否打印信息
+    Args:
+        folder_path: directory containing .pkl files
+        columns: optional columns to retain to reduce memory usage
+        verbose: whether to print information
 
-    返回:
+    Returns:
         pd.DataFrame
     """
     folder_path = Path(folder_path)
     if not folder_path.exists():
-        raise FileNotFoundError(f"路径不存在: {folder_path}")
+        raise FileNotFoundError(f"Path does not exist: {folder_path}")
 
     pkl_files = sorted([f for f in folder_path.glob("*.pkl") if f.is_file()])
     if not pkl_files:
-        raise FileNotFoundError(f"未找到任何 .pkl 文件: {folder_path}")
+        raise FileNotFoundError(f"No .pkl files found: {folder_path}")
 
     dfs = []
     for file in tqdm(pkl_files, desc="Loading PKL files"):
@@ -103,7 +103,7 @@ def read_all_pkl_files(folder_path: str, columns: List[str] = None, verbose: boo
             elif isinstance(data, pd.DataFrame):
                 df = data
             else:
-                # 尝试从 dict 中取
+                # Try to construct a DataFrame from a dictionary.
                 try:
                     df = pd.DataFrame(data)
                 except Exception:
@@ -113,15 +113,15 @@ def read_all_pkl_files(folder_path: str, columns: List[str] = None, verbose: boo
                 df = df[[c for c in columns if c in df.columns]]
             dfs.append(df)
         except Exception as e:
-            print(f"❌ 无法读取 {file}: {e}")
+            print(f"Error: Failed to read {file}: {e}")
 
     df_all = pd.concat(dfs, ignore_index=True)
     if verbose:
-        print(f"✅ 成功加载 {len(df_all)} 条数据，来自 {len(pkl_files)} 个文件")
+        print(f"Loaded {len(df_all)} rows from {len(pkl_files)} files")
     return df_all
 
 
-# # 子进程读单个文件：必须放在模块顶层
+# # Worker function for reading one file; must be defined at module level.
 # def _load_one_pkl_process(file_str: str, columns=None):
 #     file = Path(file_str)
 #     with open(file, "rb") as f:
@@ -142,19 +142,19 @@ def read_all_pkl_files(folder_path: str, columns: List[str] = None, verbose: boo
 
 # def read_all_pkl_files(folder_path, columns=None, verbose=True, max_workers=None):
 #     """
-#     多进程读取文件夹中所有 .pkl 文件，合并为一个 DataFrame
+#     Read all .pkl files in a directory with multiprocessing and merge them into one DataFrame.
 #     """
 #     folder_path = Path(folder_path)
 #     if not folder_path.exists():
-#         raise FileNotFoundError(f"路径不存在: {folder_path}")
+#         raise FileNotFoundError(f"Path does not exist: {folder_path}")
 
 #     pkl_files = sorted([f for f in folder_path.glob("*.pkl") if f.is_file()])
 #     if not pkl_files:
-#         raise FileNotFoundError(f"未找到任何 .pkl 文件: {folder_path}")
+#         raise FileNotFoundError(f"No .pkl files found: {folder_path}")
 
-#     # 默认进程数：不要太大，避免把共享存储打崩 + 内存爆
+#     # Default worker count: keep it modest to avoid overloading shared storage or memory.
 #     if max_workers is None:
-#         max_workers = min(8, len(pkl_files))  # 你也可以改成 os.cpu_count()
+#         max_workers = min(8, len(pkl_files))  # can also be changed to os.cpu_count()
 #     else:
 #         max_workers = min(max_workers, len(pkl_files))
 
@@ -175,23 +175,23 @@ def read_all_pkl_files(folder_path: str, columns: List[str] = None, verbose: boo
 #                     dfs.append(df)
 #             except Exception as e:
 #                 errors += 1
-#                 print(f"❌ 无法读取 {f}: {e}")
+#                 print(f"Error: Failed to read {f}: {e}")
 
 #     if not dfs:
-#         raise RuntimeError("所有 pkl 都加载失败，dfs 为空")
+#         raise RuntimeError("All PKL files failed to load; dfs is empty.")
 
 #     df_all = pd.concat(dfs, ignore_index=True)
 #     if verbose:
-#         print(f"✅ 成功加载 {len(df_all)} 条数据，来自 {len(pkl_files)} 个文件（失败 {errors} 个），workers={max_workers}")
+#         print(f"Loaded {len(df_all)} rows from {len(pkl_files)} files (failed {errors}), workers={max_workers}")
 #     return df_all
 
 
 # ========================================
-# Faiss 聚类函数（类内使用）
+# Faiss clustering function used within each class.
 # ========================================
 def faiss_kmeans(data, k, niter=20, gpu=False, seed=42):
     """
-    对输入数据进行 KMeans 聚类
+    Run KMeans clustering on the input data.
     """
     data = data.astype(np.float32)
     n_samples, dim = data.shape
@@ -222,7 +222,7 @@ def faiss_kmeans(data, k, niter=20, gpu=False, seed=42):
 
 
 # ========================================
-# 保存类内聚类结果
+# Save per-class clustering results
 # ========================================
 def save_per_class_clustering_result(
     df_class: pd.DataFrame,
@@ -234,14 +234,14 @@ def save_per_class_clustering_result(
     extra_metadata: dict = None
 ):
     """
-    保存单个类的聚类结果：
+    Save clustering results for one class:
         output_base_dir/
-          └── class_{id}/
-               ├── centroids.npy
-               ├── cluster_mapping.json
-               └── clusters/
-                    ├── cluster_0000_00000.parquet
-                    └── ...
+          `-- class_{id}/
+               |-- centroids.npy
+               |-- cluster_mapping.json
+               `-- clusters/
+                    |-- cluster_0000_00000.parquet
+                    `-- ...
     """
     output_base_dir = Path(output_base_dir)
     class_dir = output_base_dir / f"class_{class_id}"
@@ -250,13 +250,13 @@ def save_per_class_clustering_result(
     clusters_dir = class_dir / "clusters"
     clusters_dir.mkdir(exist_ok=True)
 
-    # 添加聚类标签
+    # Add cluster labels.
     df_with_label = df_class.reset_index(drop=True).copy()
     df_with_label["cluster_label"] = labels
 
-    # 分块保存 cluster 数据
+    # Save cluster data in chunks.
     grouped = df_with_label.groupby("cluster_label")
-    print(f"📦 Class {class_id}: 共 {len(grouped)} 个子簇")
+    print(f"Class {class_id}: {len(grouped)} subclusters")
 
     for label, group in grouped:
         chunk_size = max_rows_per_file
@@ -268,10 +268,10 @@ def save_per_class_clustering_result(
             filename = f"cluster_{label:04d}_{i:05d}.parquet"
             chunk.to_parquet(clusters_dir / filename, index=False)
 
-    # 保存聚类中心
+    # Save centroids.
     np.save(class_dir / "centroids.npy", centroids)
 
-    # 保存映射信息
+    # Save mapping metadata.
     unique, counts = np.unique(labels, return_counts=True)
     mapping = {
         "class_id": int(class_id),
@@ -284,52 +284,52 @@ def save_per_class_clustering_result(
         import json
         json.dump(mapping, f, indent=2, ensure_ascii=False)
 
-    print(f"✅ 类 {class_id} 聚类结果已保存至: {class_dir}")
+    print(f"Class {class_id} clustering results saved to: {class_dir}")
 
 
 # ========================================
-# 主函数
+# Main function.
 # ========================================
 def main(
     input_pkl_dir: str,
     output_base_dir: str,
     feature_column: str = "feature",
-    target_classes: list = None,  # 如果只想处理某些类
-    n_clusters_per_class: int = 10,  # 每个类聚成几类
-    max_samples_per_class: int = None,  # 可选：限制每类最多用多少样本
+    target_classes: list = None,  # set this to process only selected classes
+    n_clusters_per_class: int = 10,  # number of clusters per class
+    max_samples_per_class: int = None,  # optional cap on samples per class
     kmeans_iter: int = 20,
     use_gpu: bool = False,
     max_rows_per_file: int = 100_000
 ):
-    print("🚀 开始按类聚类任务...")
+    print("Starting class-wise clustering task...")
 
-    # 1. 加载所有 pkl
+    # 1. Load all PKL files.
     df_all = read_all_pkl_files(
         folder_path=input_pkl_dir,
         columns=['image_name', 'true_class', 'pred_class', 'correct', 'loss', 'logits', 'feature'],
         verbose=True,
     )
 
-    # 2. 过滤目标类
+    # 2. Filter target classes.
     if target_classes is not None:
         df_all = df_all[df_all['true_class'].isin(target_classes)]
-        print(f"筛选后剩余 {len(df_all)} 条数据")
+        print(f"Rows after filtering: {len(df_all)}")
 
-    # 3. 按 true_class 分组
+    # 3. Group by true_class.
     grouped = df_all.groupby('true_class')
-    print(f"🔍 共发现 {len(grouped)} 个类别")
+    print(f"Found {len(grouped)} classes")
 
-    # 4. 并行遍历每个类进行聚类
+    # 4. Cluster each class in parallel.
     groups = list(grouped)  # [(class_id, df_class), ...]
-    print(f"🧵 准备并行处理 {len(groups)} 个类别")
+    print(f"Preparing to process {len(groups)} classes")
 
-    # 建议：只保留需要列，减少进程间 pickle 成本
+    # Keep only required columns to reduce inter-process pickle overhead.
     needed_cols = ['image_name', 'true_class', 'pred_class', 'correct', 'loss', 'logits', feature_column]
     groups = [(cid, dfc[needed_cols].copy()) for cid, dfc in groups]
 
-    # 进程数：按机器核数/任务数调；太大反而会抢内存
+    # Choose workers based on CPU count and task count; too many workers can increase memory pressure.
     max_workers = min(os.cpu_count() or 1, len(groups), 8)
-    print(f"⚙️ Process workers = {max_workers}")
+    print(f"Process workers = {max_workers}")
 
     futures = []
     with ProcessPoolExecutor(max_workers=max_workers) as ex:
@@ -351,9 +351,9 @@ def main(
         for fut in tqdm(as_completed(futures), total=len(futures), desc="Processing classes (parallel)"):
             class_id, ok, msg = fut.result()
             if not ok:
-                print(f"❌ class {class_id}: {msg}")
+                print(f"Error: class {class_id}: {msg}")
             else:
-                print(f"✅ class {class_id}: {msg}")
+                print(f"class {class_id}: {msg}")
 
 def format_duration(seconds: float) -> str:
     seconds = int(round(seconds))
@@ -362,7 +362,7 @@ def format_duration(seconds: float) -> str:
     return f"{h:02d}:{m:02d}:{s:02d}"
 
 # ========================================
-# 示例调用
+# Example usage.
 # ========================================
 if __name__ == "__main__":
     import argparse
@@ -378,13 +378,13 @@ if __name__ == "__main__":
     main(
         input_pkl_dir=input_pkl_dir,
         output_base_dir=output_base_dir,
-        feature_column="feature",           # 你 pkl 中存 fc 输入的字段名
-        target_classes=None,                # 设为 [0, 1, 2] 只处理前3类；None 表示全部
-        n_clusters_per_class=25,            # 每类聚成 25 个子簇（可调整）
-        max_samples_per_class=5000,         # 每类最多用 5000 个样本（防内存爆炸）
+        feature_column="feature",           # field name that stores fc inputs in the PKL files
+        target_classes=None,                # set to [0, 1, 2] to process only the first three classes; None means all classes
+        n_clusters_per_class=25,            # cluster each class into 25 subclusters; adjustable
+        max_samples_per_class=5000,         # use at most 5000 samples per class to avoid excessive memory usage
         kmeans_iter=25,
-        use_gpu=False,                       # 若有 GPU 加速建议开启
-        max_rows_per_file=10000             # 每个 parquet 最多 1w 行
+        use_gpu=False,                       # enable GPU acceleration when available
+        max_rows_per_file=10000             # at most 10k rows per parquet file
     )
     t1 = time.perf_counter()
     print(f"Total inference time: {format_duration(t1 - t0)}")

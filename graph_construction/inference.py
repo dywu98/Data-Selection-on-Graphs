@@ -27,7 +27,7 @@ import pickle
 
 
 class ImageFolderWithPath(torchvision.datasets.ImageFolder):
-    """包装 ImageFolder，使其 __getitem__ 返回 (image, target, path)"""
+    """Wrap ImageFolder so __getitem__ returns (image, target, path)."""
     def __getitem__(self, index):
         img, target = super().__getitem__(index)
         path, _ = self.samples[index]
@@ -43,12 +43,12 @@ from torch import nn
 SAVE_EVERY_N_SAMPLES=10000
 
 # ========================================
-# 异步保存辅助函数（必须定义在模块顶层！）
+# Asynchronous save helper; must be defined at module level.
 # ========================================
 def _save_pickle_async(data, filepath):
     """
-    用于 ThreadPoolExecutor.submit 的独立函数
-    将数据异步保存为 .pkl 文件
+    Standalone function used with ThreadPoolExecutor.submit.
+    Save data asynchronously as a .pkl file.
     """
     try:
         with open(filepath, 'wb') as f:
@@ -64,11 +64,11 @@ def evaluate(model, criterion, data_loader, device, args, print_freq=1, log_suff
 
     module = model.module if hasattr(model, 'module') else model
 
-    # === Hook: 捕获 fc 层输入 ===
-    fc_input_buffer = []  # 存储每个 batch 的 fc 输入
+    # === Hook: capture the input to the fc layer. ===
+    fc_input_buffer = []  # Store the fc input for each batch.
 
     def fc_pre_hook(m, input):
-        # input 是 tuple，取第一个 tensor 并 detach + CPU
+        # input is a tuple; take the first tensor, detach it, and move it to CPU.
         features = input[0].detach().cpu()
         fc_input_buffer.append(features)
 
@@ -77,18 +77,18 @@ def evaluate(model, criterion, data_loader, device, args, print_freq=1, log_suff
     
     hook_handle = module.fc.register_forward_pre_hook(fc_pre_hook)
 
-    # === 分布式设置 ===
+    # === Distributed setup. ===
     rank = torch.distributed.get_rank() if args.distributed else 0
     output_dir = args.output_dir
     os.makedirs(output_dir, exist_ok=True)
 
-    # === 异步保存配置 ===
+    # === Asynchronous save configuration. ===
     executor = ThreadPoolExecutor(max_workers=1)
     pending_tasks = []
     save_counter = 0
     samples_since_last_save = 0
 
-    # === 类别映射 ===
+    # === Class mapping. ===
     dataset = data_loader.dataset
     idx_to_class = {v: k for k, v in dataset.class_to_idx.items()}
     try:
@@ -99,10 +99,10 @@ def evaluate(model, criterion, data_loader, device, args, print_freq=1, log_suff
         print(f"Warning: Could not load category names: {e}")
         categories = None
 
-    # === 损失函数（逐样本）===
+    # === Per-sample loss function.===
     per_sample_loss_fn = nn.CrossEntropyLoss(reduction='none')
 
-    # === 缓冲区：用于批量保存 ===
+    # === Buffer used for batched saving. ===
     buffer = []
 
     with torch.inference_mode():
@@ -110,27 +110,27 @@ def evaluate(model, criterion, data_loader, device, args, print_freq=1, log_suff
             image = image.to(device, non_blocking=True)
             target = target.to(device, non_blocking=True)
 
-            # 前向传播
+            # Forward pass.
             output = model(image)
             loss = criterion(output, target)
             acc1, acc5 = utils.accuracy(output, target, topk=(1, 5))
             batch_size = image.shape[0]
 
-            # 转为 CPU
+            # Move results to CPU.
             output_cpu = output.cpu().float().numpy()
             per_sample_loss = per_sample_loss_fn(output, target).cpu().numpy()
             pred_classes = output_cpu.argmax(axis=1)
             true_classes = target.cpu().numpy()
 
-            # 获取当前 batch 的 fc 输入
+            # Get the fc input for the current batch.
             if len(fc_input_buffer) == 0:
                 raise RuntimeError("No fc input captured. Check if hook is registered and model runs.")
-            fc_features = fc_input_buffer.pop()  # 取出最新一个 batch 的特征
+            fc_features = fc_input_buffer.pop()  # Pop the most recent batch of features.
             if len(fc_features) != batch_size:
-                fc_features = fc_features[:batch_size]  # 截断对齐（防止 sampler 问题）
+                fc_features = fc_features[:batch_size]  # Truncate for alignment in case of sampler mismatch.
             fc_features_np = fc_features.numpy()
 
-            # 构建每条记录
+            # Build each record.
             for i in range(batch_size):
                 pred_cls_id = int(pred_classes[i])
                 true_cls_id = int(true_classes[i])
@@ -139,13 +139,13 @@ def evaluate(model, criterion, data_loader, device, args, print_freq=1, log_suff
                     'image_name': image_paths[i],
                     'logits': output_cpu[i].tolist(),
                     'loss': float(per_sample_loss[i]),
-                    'feature': fc_features_np[i].tolist(),  # fc 输入作为 feature
+                    'feature': fc_features_np[i].tolist(),  # fc input used as feature
                     'true_class': true_cls_id,
                     'pred_class': pred_cls_id,
                     'correct': pred_cls_id == true_cls_id,
                 }
 
-                # 添加类别名（可选）
+                # Add class names when available.
                 if categories and 0 <= true_cls_id < len(categories):
                     row['true_classname'] = categories[true_cls_id]
                 else:
@@ -158,30 +158,30 @@ def evaluate(model, criterion, data_loader, device, args, print_freq=1, log_suff
 
                 buffer.append(row)
 
-            # 更新统计
+            # Update metrics.
             metric_logger.update(loss=loss.item())
             metric_logger.meters["acc1"].update(acc1.item(), n=batch_size)
             metric_logger.meters["acc5"].update(acc5.item(), n=batch_size)
 
             samples_since_last_save += batch_size
 
-            # === 判断是否需要保存 ===
+            # === Check whether a save is needed. ===
             if samples_since_last_save >= SAVE_EVERY_N_SAMPLES:
-                # 提交异步保存
+                # Submit asynchronous save.
                 output_file = os.path.join(output_dir, f"results_rank{rank}_chunk{save_counter:04d}.pkl")
                 data_to_save = buffer.copy()
                 future = executor.submit(_save_pickle_async, data_to_save, output_file)
                 pending_tasks.append(future)
 
-                # 日志
+                # Log message.
                 print(f"Rank {rank} submitted async save of {len(data_to_save)} samples to {output_file}")
 
-                # 清空
+                # Clear the buffer.
                 buffer.clear()
                 samples_since_last_save = 0
                 save_counter += 1
 
-    # === 最后剩余数据保存 ===
+    # === Save any remaining data. ===
     if len(buffer) > 0:
         output_file = os.path.join(output_dir, f"results_rank{rank}_chunk{save_counter:04d}.pkl")
         data_to_save = buffer.copy()
@@ -190,23 +190,23 @@ def evaluate(model, criterion, data_loader, device, args, print_freq=1, log_suff
         print(f"Rank {rank} submitted FINAL save of {len(data_to_save)} samples to {output_file}")
         save_counter += 1
 
-    # === 等待所有保存完成 ===
+    # === Wait for all save tasks to finish. ===
     for future in pending_tasks:
-        future.result()  # 阻塞等待
+        future.result()  # block until completion
     executor.shutdown(wait=True)
 
-    # === 写完成标记（仅 rank 0）===
+    # === Write a completion marker on rank 0 only.===
     if rank == 0:
         done_file = os.path.join(output_dir, "eval_done.txt")
         with open(done_file, "w") as f:
             f.write(f"Evaluation completed at {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
         print(f"[Rank 0] Evaluation complete. Marker saved: {done_file}")
 
-    # === 清理 hook ===
+    # === Remove the hook. ===
     hook_handle.remove()
 
-    # === 同步指标 ===
-    num_processed_samples = utils.reduce_across_processes(sum(len(s) for s in [buffer]))  # 近似
+    # === Synchronize metrics. ===
+    num_processed_samples = utils.reduce_across_processes(sum(len(s) for s in [buffer]))  # approximate
     metric_logger.synchronize_between_processes()
     acc1_avg = metric_logger.acc1.global_avg
     print(f"{header} Acc@1 {acc1_avg:.3f} Acc@5 {metric_logger.acc5.global_avg:.3f}")
@@ -269,7 +269,7 @@ def load_data(traindir, valdir, args):
     dataset_test = ImageFolderWithPath(traindir, preprocessing)
     # dataset_test = ImageFolderWithPath(valdir, preprocessing)
 
-    # 关键修改：保存原始 __getitem__ 并替换为返回路径的新版本
+    # Keep the original __getitem__ and replace it with a path-returning version.
     original_getitem = dataset_test.__getitem__
 
     def _new_getitem(index):

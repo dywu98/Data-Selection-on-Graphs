@@ -84,7 +84,7 @@ def load_cluster_data(class_dir: Path):
             df = pd.read_parquet(file)
             clusters.setdefault(cluster_id, []).append(df)
         except Exception as e:
-            print(f"⚠️ 无法读取 {file}: {e}")
+            print(f"Warning: Failed to read {file}: {e}")
 
     for cid in list(clusters.keys()):
         clusters[cid] = pd.concat(clusters[cid], ignore_index=True)
@@ -99,7 +99,7 @@ def save_graph(graph_data, save_path: Path):
 
 
 def _process_one_cluster(args):
-    """子进程：构图+保存（必须在模块顶层）"""
+    """Worker process: build and save a graph; must be defined at module level."""
     class_id, cluster_id, df_cluster, feature_col, output_root = args
     t0 = time.perf_counter()
 
@@ -121,9 +121,9 @@ def main(input_clustering_root: str, output_graph_root: str, feature_col: str = 
 
     class_dirs = [d for d in input_root.iterdir() if d.is_dir() and d.name.startswith("class_")]
     if not class_dirs:
-        raise FileNotFoundError(f"未找到以 'class_' 开头的子目录: {input_root}")
+        raise FileNotFoundError(f"No subdirectories starting with 'class_' were found: {input_root}")
 
-    # 先扫描并构建任务列表：任务粒度=cluster
+    # First scan and build the task list; task granularity is one cluster.
     tasks = []
     class_task_count = {}
     scan_t0 = time.perf_counter()
@@ -139,22 +139,22 @@ def main(input_clustering_root: str, output_graph_root: str, feature_col: str = 
 
     scan_t1 = time.perf_counter()
     if not tasks:
-        print("没有任何 cluster 任务")
+        print("No cluster tasks found.")
         return
 
     if max_workers is None:
         max_workers = min(4, os.cpu_count() or 1)
 
-    print(f"🔍 Scan done: classes={len(class_task_count)}, clusters={len(tasks)} "
+    print(f"Scan done: classes={len(class_task_count)}, clusters={len(tasks)} "
           f"(scan time {format_duration(scan_t1 - scan_t0)}), workers={max_workers}")
 
-    # 统计容器
+    # Statistics containers.
     per_class_time = defaultdict(float)
     per_class_done = defaultdict(int)
     per_class_total = class_task_count
     per_task_times = []  # (elapsed, class_id, cluster_id, N)
 
-    # 并行执行 + 进度条（总任务进度）
+    # Execute in parallel with a global progress bar.
     run_t0 = time.perf_counter()
     with ProcessPoolExecutor(max_workers=max_workers) as ex:
         futures = [ex.submit(_process_one_cluster, t) for t in tasks]
@@ -168,7 +168,7 @@ def main(input_clustering_root: str, output_graph_root: str, feature_col: str = 
             per_class_done[class_id] += 1
             per_task_times.append((elapsed, class_id, cluster_id, n))
 
-            # 在进度条后缀里显示“某个 class”的总体完成情况（展示最近完成的 class）
+            # Show per-class completion status for the most recently finished class in the progress-bar postfix.
             pbar.set_postfix_str(
                 f"last=class{class_id} c{cluster_id:04d} N={n} "
                 f"class_progress={per_class_done[class_id]}/{per_class_total[class_id]}"
@@ -184,29 +184,29 @@ def main(input_clustering_root: str, output_graph_root: str, feature_col: str = 
     print(f"Total clusters: {len(tasks)}")
     print(f"Avg time/cluster: {avg_per_cluster:.3f}s")
 
-    # 每个 class 汇总（按耗时降序）
+    # Per-class summary sorted by elapsed time.
     print("\nTop classes by accumulated time:")
     for class_id, tsec in sorted(per_class_time.items(), key=lambda x: x[1], reverse=True)[:10]:
         print(f"  class_{class_id}: {format_duration(tsec)}  "
               f"clusters={per_class_done[class_id]}")
 
-    # 最慢的若干 cluster
+    # Slowest clusters.
     per_task_times.sort(reverse=True, key=lambda x: x[0])
     if print_slowest and print_slowest > 0:
         print(f"\nSlowest {min(print_slowest, len(per_task_times))} clusters:")
         for elapsed, class_id, cluster_id, n in per_task_times[:print_slowest]:
             print(f"  class_{class_id} cluster_{cluster_id:04d} N={n}  {elapsed:.3f}s")
 
-    print(f"\n🎉 Done! Graphs saved to: {output_root}")
+    print(f"\nDone! Graphs saved to: {output_root}")
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="基于聚类结果构建全连接图（加速+进度+计时）")
-    parser.add_argument("--input", type=str, required=True, help="聚类结果根目录（包含 class_* 文件夹）")
-    parser.add_argument("--output", type=str, required=True, help="图输出根目录")
-    parser.add_argument("--feature_col", type=str, default="feature", help="特征列名（默认: feature）")
-    parser.add_argument("--workers", type=int, default=None, help="并行进程数（默认: min(4,cpu_count)）")
-    parser.add_argument("--print_slowest", type=int, default=10, help="打印最慢的N个cluster（默认10）")
+    parser = argparse.ArgumentParser(description="Build fully connected graphs from clustering results with acceleration, progress, and timing")
+    parser.add_argument("--input", type=str, required=True, help="clustering-result root directory containing class_* folders")
+    parser.add_argument("--output", type=str, required=True, help="graph output root directory")
+    parser.add_argument("--feature_col", type=str, default="feature", help="feature column name (default: feature)")
+    parser.add_argument("--workers", type=int, default=None, help="number of worker processes (default: min(4, cpu_count))")
+    parser.add_argument("--print_slowest", type=int, default=10, help="print the slowest N clusters (default: 10)")
 
     args = parser.parse_args()
 

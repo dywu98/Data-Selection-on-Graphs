@@ -6,7 +6,7 @@ import torch
 import time
 
 class ExitToMainException(Exception):
-    """自定义异常，用于直接跳出到main函数"""
+    """Custom exception used to exit directly to the main function."""
     def __init__(self, message="", exit_code=0, data=None):
         self.message = message
         self.exit_code = exit_code
@@ -30,7 +30,7 @@ def _get_assigned_names(node):
         elif isinstance(target, (ast.Tuple, ast.List)):
             for elt in target.elts:
                 collect(elt)
-        # 忽略属性赋值 self.x 等
+        # Ignore attribute assignments such as self.x.
     for t in targets:
         collect(t)
     return names
@@ -43,7 +43,7 @@ class InjectCaptureTransformer(ast.NodeTransformer):
         self.mode = mode  # "first" or "last"
 
     def visit_FunctionDef(self, node: ast.FunctionDef):
-        # === 第一步：扫描所有赋值语句，按变量收集其出现的语句 ===
+        # === Step 1: scan assignments and collect statements by variable. ===
         assignments = {name: [] for name in self.target_names}
 
         for stmt in node.body:
@@ -53,8 +53,8 @@ class InjectCaptureTransformer(ast.NodeTransformer):
                     if name in self.target_names:
                         assignments[name].append(stmt)
 
-        # === 第二步：确定每个变量在哪个 stmt 后插入 capture ===
-        # 我们现在要记录：在哪个 stmt 后插入？插入时捕获哪些 name？
+        # === Step 2: determine after which statement capture should be inserted for each variable. ===
+        # Record where to insert capture calls and which names should be captured there.
         insert_info = {}  # stmt_node -> set of names to capture after this stmt
 
         for name in self.target_names:
@@ -66,13 +66,13 @@ class InjectCaptureTransformer(ast.NodeTransformer):
                 insert_info[target_stmt] = set()
             insert_info[target_stmt].add(name)
 
-        # === 第三步：构建新 body，在指定 stmt 后插入 capture 调用 ===
+        # === Step 3: build a new function body and insert capture calls after selected statements. ===
         new_body = []
         for stmt in node.body:
             new_body.append(stmt)
             if stmt in insert_info:
-                # 获取在此语句后需要 capture 的所有变量名
-                names_to_capture = sorted(insert_info[stmt])  # 排序确保确定性
+                # Get all variable names that should be captured after this statement.
+                names_to_capture = sorted(insert_info[stmt])  # Sort for deterministic output.
                 for name in names_to_capture:
                     call = ast.Expr(
                         value=ast.Call(
@@ -98,7 +98,7 @@ def instrument_forward_and_capture(module, var_names, mode="last", capture_until
     var_names = list(var_names)
     original_forward = module.forward
     features = {}
-    features['_target_names'] = var_names  # 传递给 capture 函数用作计数初始化
+    features['_target_names'] = var_names  # Passed to the capture function to initialize counters.
 
     def _make_capture(features_dict, mode_flag, capture_until_num):
         target_names = features_dict.get('_target_names', [])
@@ -111,7 +111,7 @@ def instrument_forward_and_capture(module, var_names, mode="last", capture_until
                 is_tensor = False
             saved = value.detach().clone() if is_tensor else value
 
-            # 更新最新值
+            # Update the latest value.
             try:
                 features_dict[name] = torch.cat([features_dict[name],saved], dim=0)
             except KeyError:
@@ -123,29 +123,29 @@ def instrument_forward_and_capture(module, var_names, mode="last", capture_until
             if 'start_time' not in features_dict:
                 features_dict['start_time'] = time.time()
 
-            # 计数 +1
+            # Increment the count.
             if name not in capture_count:
                 capture_count[name] = 0
             capture_count[name] += 1
             # print(f"-------------------------------------capture_count[{name}]:{capture_count[name]}-------------------------------------")
-            # 判断是否达到周期阈值
+            # Check whether the cycle threshold has been reached.
             if capture_until_num and (capture_count[name] % capture_until_num == 0):
                 raise ExitToMainException(
-                    message=f"[Capture#{capture_count[name]}] '{name}' captured {capture_until_num}x cycle → Break!",
+                    message=f"[Capture#{capture_count[name]}] '{name}' captured {capture_until_num}x cycle -> Break!",
                     exit_code=0,
                     data=saved
                 )
 
             return value
 
-        # === 关键：把计数器暴露为属性，供外部操作 ===
+        # === Expose the counter as an attribute for external access. ===
         _capture.__dict__['capture_count'] = capture_count
         _capture.__dict__['reset_counter'] = lambda names=None: _reset_count(names)
         
         def _reset_count(names=None):
-            """重置计数器
+            """Reset the counter.
             Args:
-                names: str or list of str, 要重置的变量名；None 表示全部
+                names: str or list of str, variable names to reset; None means all variables
             """
             if names is None:
                 vars_to_reset = target_names
@@ -182,7 +182,7 @@ def instrument_forward_and_capture(module, var_names, mode="last", capture_until
             i += 1
         injected_name = f"{base_injected}_{i}"
 
-    # 关键：把 mode 传进去
+    # Pass mode to the transformer.
     transformer = InjectCaptureTransformer(var_names, injected_name, mode=mode)
     mod_ast = transformer.visit(mod_ast)
     ast.fix_missing_locations(mod_ast)
@@ -214,9 +214,9 @@ def instrument_forward_and_capture(module, var_names, mode="last", capture_until
         if injected_name in g and g[injected_name] is capture_func:
             del g[injected_name]
 
-    # 暴露 reset_counter
+    # Expose reset_counter.
     def reset_counter(names=None):
-        """重置 capture 计数器"""
+        """Reset the capture counter."""
         if hasattr(capture_func, 'reset_counter'):
             capture_func.reset_counter(names)
 
@@ -230,9 +230,9 @@ class C(torch.nn.Module):
 
     def forward(self, x):
         h = self.proj(x)
-        tmp = torch.relu(h)   # 我们想捕获 tmp（没有返回）
+        tmp = torch.relu(h)   # Capture tmp even though it is not returned.
         print("first tmp", tmp)
-        tmp = tmp * 2         # 再次修改 tmp
+        tmp = tmp * 2         # Modify tmp again.
         # print("second tmp", tmp)
         tmp = tmp -10
         print("last tmp", tmp)
@@ -254,11 +254,11 @@ class A(torch.nn.Module):
         return self.B(x)
 
 if __name__=="__main__":
-    # ====== 使用插桩器 ======
+    # ====== Use the instrumentation helper. ======
     model = A()
     x = torch.randn(2, 10)
 
-    # --- 捕获第一次赋值 ---
+    # --- Capture the first assignment. ---
     features_first, restore_first = instrument_forward_and_capture(
         model.B.C, ["tmp"], mode="first", capture_until_num=3
     )
@@ -284,7 +284,7 @@ if __name__=="__main__":
     restore_first()
 
 
-    # --- 捕获最后一次赋值 ---
+    # --- Capture the last assignment. ---
     features_last, restore_last = instrument_forward_and_capture(
         model.B.C, ["tmp"], mode="last"
     )

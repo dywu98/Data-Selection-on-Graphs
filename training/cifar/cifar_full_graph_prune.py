@@ -1,13 +1,13 @@
 """
-CIFAR100 全量图剪枝训练脚本（不按类别聚类）
-用于对比实验：验证不聚类情况下的 graph 剪枝效果
+CIFAR100 full-graph pruning training script without class-wise clustering.
+Used for ablation experiments that evaluate graph pruning without clustering.
 
-用法示例:
-    # 单 GPU
+Usage examples:
+    # Single GPU
     python cifar_full_graph_prune.py --graph-path /path/to/full_graph.pkl \\
         --dataloader-ratio 0.625 --score-weight 1.0 --model r18 --num_epoch 200
 
-    # 多 GPU DDP
+    # Multi-GPU DDP
     torchrun --nproc_per_node=4 cifar_full_graph_prune.py --graph-path /path/to/full_graph.pkl \\
         --dataloader-ratio 0.625 --score-weight 1.0 --model r18 --num_epoch 200 --use_ddp
 """
@@ -28,7 +28,7 @@ from torchvision import transforms
 from model import *
 import torch.distributed as dist
 
-# 导入 CIFAR100 全量图 GraphProbPrune
+# Import the CIFAR100 full-graph GraphProbPrune implementation.
 from cifar_full_graph_dataloader import CIFARFullGraphProbPrune, DistributedSamplerWrapper, concat_all_gather, split_index, recombine_index, is_master
 
 RANK = int(os.getenv('RANK', -1))
@@ -37,7 +37,7 @@ LOCAL_RANK = int(os.getenv('LOCAL_RANK', -1))
 
 def compute_uncertainty_metrics(logits, top_k=2, reduction='mean'):
     """
-    根据 logits 计算不确定性指标（熵）
+    Compute entropy-based uncertainty metrics from logits.
     """
     if logits.dim() == 3:
         logits = logits.squeeze(0)
@@ -96,14 +96,14 @@ if __name__ == '__main__':
     parser.add_argument('--delta', default=0.875, type=float, help='annealing delta')
     parser.add_argument('--model', default='r18', type=str, help='model architecture')
     # Full graph prune specific arguments
-    parser.add_argument('--graph-path', type=str, required=True, help='全量图文件路径 (.pkl)')
+    parser.add_argument('--graph-path', type=str, required=True, help='full-graph file path (.pkl)')
     parser.add_argument('--dataloader-ratio', type=float, default=0.625, help='GraphProbPrune ratio')
     parser.add_argument('--score-weight', type=float, default=1.0, help='uncertainty score weight')
     parser.add_argument('--prune-mode', type=str, default='prob', choices=['prob', 'topk'], help='prune selection mode')
 
     args = parser.parse_args()
 
-    # 设备设置
+    # Device setup.
     if not torch.cuda.is_available():
         device = 'cpu'
     elif args.use_ddp:
@@ -113,7 +113,7 @@ if __name__ == '__main__':
         device = 'cuda:0'
     safe_print('==> Building model..')
 
-    # 模型构建
+    # Model construction.
     if args.model.lower() == 'r18':
         net = ResNet18(num_classes=100)
     elif args.model.lower() == 'r50':
@@ -131,7 +131,7 @@ if __name__ == '__main__':
         safe_print('use normal data parallel')
         net = torch.nn.DataParallel(net)
 
-    # Loss 函数
+    # Loss function.
     try:
         criterion = nn.CrossEntropyLoss(
             label_smoothing=args.label_smoothing, reduction='none').to(device)
@@ -145,7 +145,7 @@ if __name__ == '__main__':
     best_epoch = 0
     start_epoch = 0
 
-    # 数据预处理
+    # Data preprocessing.
     stats = ((0.5074, 0.4867, 0.4411), (0.2011, 0.1987, 0.2025))
     train_transform = transforms.Compose([
         transforms.RandomHorizontalFlip(),
@@ -158,12 +158,12 @@ if __name__ == '__main__':
         transforms.Normalize(*stats)
     ])
 
-    # 加载 CIFAR100 数据集
+    # Load the CIFAR100 dataset.
     base_trainset = torchvision.datasets.CIFAR100(
         root='./cifar100', train=True, transform=train_transform, download=True
     )
 
-    # 使用全量图 GraphProbPrune 包装数据集
+    # Wrap the dataset with full-graph GraphProbPrune.
     safe_print(f'Using CIFARFullGraphProbPrune with graph_path: {args.graph_path}')
     safe_print(f'dataloader_ratio: {args.dataloader_ratio}, prune_mode: {args.prune_mode}')
 
@@ -236,11 +236,11 @@ if __name__ == '__main__':
                 outputs = net(inputs)
                 loss = criterion(outputs, targets)
 
-                # 计算不确定性作为 score
+                # Compute uncertainty as the score.
                 scores = compute_uncertainty_metrics(outputs, reduction='none')
                 scores = scores * args.score_weight
 
-                # 更新 dataset 的分数
+                # Update dataset scores.
                 if args.use_ddp:
                     low, high = split_index(indices)
                     low, high = low.to(device), high.to(device)
@@ -252,7 +252,7 @@ if __name__ == '__main__':
                 else:
                     trainset.__setscore__(indices.detach().cpu().numpy(), scores.detach().cpu().numpy())
 
-                # 加权 loss
+                # Weighted loss.
                 loss = loss * weights
                 loss = loss.mean()
 
@@ -300,13 +300,13 @@ if __name__ == '__main__':
             best_loss = cur_loss
         valid_acc.append(cur_acc)
 
-    # 训练循环
+    # Training loop.
     total_time = 0
     for epoch in range(args.num_epoch):
         if args.use_ddp:
             trainloader.sampler.set_epoch(epoch)
 
-        # 更新学习率调度器
+        # Update the learning-rate scheduler.
         lr_scheduler = torch.optim.lr_scheduler.OneCycleLR(
             optimizer, args.max_lr,
             steps_per_epoch=len(trainloader),
@@ -320,11 +320,11 @@ if __name__ == '__main__':
         total_time += time.time() - end
         test(epoch)
 
-    # 训练结束统计
+    # Training summary.
     safe_print('Total saved sample iteration: %d' % trainset.total_save())
     safe_print('Total training time: %.2f' % total_time)
 
-    # 保存日志
+    # Save logs.
     pref = 'full_graph_prune'
     fn = '{}-{}-ratio{}-score{}-epoch{}-bs{}-{}_cifar100_{}.json'.format(
         args.model, args.max_lr / args.div_factor, args.dataloader_ratio, args.score_weight,
@@ -345,7 +345,7 @@ if __name__ == '__main__':
                 'best_epoch': best_epoch,
             }, f, indent=2)
 
-        # 保存模型
+        # Save model.
         save_dir = "checkpoints"
         os.makedirs(save_dir, exist_ok=True)
         model_name = f"{args.model}_cifar100_full_graph_prune_ratio{args.dataloader_ratio}_epoch{args.num_epoch}"
@@ -361,7 +361,7 @@ if __name__ == '__main__':
             'best_loss': best_loss,
             'args': vars(args),
         }, save_path)
-        safe_print(f"✅ Model saved to: {save_path}")
+        safe_print(f"Model saved to: {save_path}")
 
     if args.use_ddp:
         destroy_ddp()

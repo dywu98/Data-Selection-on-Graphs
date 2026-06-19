@@ -44,12 +44,12 @@ Download [ImageNet-1k](http://image-net.org/) and organize as:
 
 ```
 /path/to/imagenet/
-├── train/
-│   ├── n01440764/
-│   └── ...
-└── val/
-    ├── n01440764/
-    └── ...
+|-- train/
+|   |-- n01440764/
+|   `-- ...
+`-- val/
+    |-- n01440764/
+    `-- ...
 ```
 
 ### CIFAR-10/100
@@ -60,29 +60,29 @@ CIFAR-10/100 will be automatically downloaded by torchvision.
 
 ```
 UGIES/
-├── graph_construction/            # Preprocessing pipeline
-│   ├── inference.py               # Extract embeddings from pretrained models
-│   ├── capture_feature.py         # Feature extraction hook utility
-│   ├── cluster.py                 # FAISS KMeans (Structured Graph Sparsification)
-│   ├── build_graph.py             # Build similarity graph (standard)
-│   ├── build_graph_fast.py        # Build similarity graph (optimized)
-│   ├── cifar_cluster.py           # CIFAR-100 clustering
-│   ├── cifar_build_graph.py       # CIFAR-100 cluster-based graph
-│   └── cifar_build_full_graph.py  # CIFAR-100 full graph
-├── training/
-│   ├── imagenet/                  # ImageNet training
-│   │   ├── train_graph_static_prob.py  # UGIES epoch-wise pruning (main)
-│   │   ├── train_online.py        # UGIES online acceleration
-│   │   ├── train.py               # Baseline (no pruning)
-│   │   └── train_unsup.py         # InfoBatch baseline
-│   └── cifar/                     # CIFAR-100 training
-│       ├── cifar_graph_prune.py        # UGIES cluster-based graph
-│       └── cifar_full_graph_prune.py   # UGIES full graph
-├── models/                        # Swin Transformer, ResNet
-├── scripts/                       # Example shell scripts
-├── PIPELINE.md                    # Detailed preprocessing docs
-├── requirements.txt
-└── README.md
+|-- graph_construction/            # Preprocessing pipeline
+|   |-- inference.py               # Extract embeddings from pretrained models
+|   |-- capture_feature.py         # Feature extraction hook utility
+|   |-- cluster.py                 # FAISS KMeans (Structured Graph Sparsification)
+|   |-- build_graph.py             # Build similarity graph (standard)
+|   |-- build_graph_fast.py        # Build similarity graph (optimized)
+|   |-- cifar_cluster.py           # CIFAR-100 clustering
+|   |-- cifar_build_graph.py       # CIFAR-100 cluster-based graph
+|   `-- cifar_build_full_graph.py  # CIFAR-100 full graph
+|-- training/
+|   |-- imagenet/                  # ImageNet training
+|   |   |-- train_graph_static_prob.py  # UGIES epoch-wise pruning (main)
+|   |   |-- train_online.py        # PFB online acceleration
+|   |   |-- train.py               # Baseline (no pruning)
+|   |   `-- train_unsup.py         # InfoBatch baseline
+|   `-- cifar/                     # CIFAR-100 training
+|       |-- cifar_graph_prune.py        # UGIES cluster-based graph
+|       `-- cifar_full_graph_prune.py   # UGIES full graph
+|-- models/                        # Swin Transformer, ResNet
+|-- scripts/                       # Example shell scripts
+|-- PIPELINE.md                    # Detailed preprocessing docs
+|-- requirements.txt
+`-- README.md
 ```
 
 ## Method Overview
@@ -201,7 +201,7 @@ torchrun --nproc_per_node=4 training/imagenet/train_graph_static_prob.py \
     --output-dir /path/to/output
 ```
 
-**UGIES online acceleration** (variant):
+**PFB batch-wise online acceleration** :
 ```bash
 torchrun --nproc_per_node=4 training/imagenet/train_online.py \
     --model swin_t --data-path /path/to/imagenet \
@@ -228,7 +228,7 @@ torchrun --nproc_per_node=4 training/imagenet/train_online.py \
 | `--score-weight` | required | Coefficient a for intrinsic vs. extrinsic balance |
 | `--graph-dir` | required | Directory with pre-built graph files |
 
-### Online Pruning (`train_online.py`)
+### PFB Online Pruning (`train_online.py`)
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
